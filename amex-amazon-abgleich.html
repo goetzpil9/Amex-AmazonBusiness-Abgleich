@@ -1,0 +1,641 @@
+<!-- Amex <-> Amazon Abgleich - eigenständige HTML/JS-App, GitHub-Pages-tauglich -->
+<!-- Kein Backend, kein Browser-Speicher: Dateien werden im Browser verarbeitet. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amex ↔ Amazon Abgleich</title>
+<meta name="description" content="Ordnet Amazon-Business-Bestellungen den American-Express-Belastungen zu – lokal im Browser.">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3A5BC7">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Amex↔Amazon">
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --ink:#1B2430; --muted:#5B6672;
+    --line:#E4E8EE; --line-strong:#CFD6E0;
+    --accent:#3A5BC7; --accent-soft:#EBF0FC;
+    --ok:#1F8A5B; --ok-soft:#E7F4EE;
+    --warn:#B7791F; --warn-soft:#FBF2E0;
+    --open:#C0392B; --open-soft:#FBEBE9;
+    --storno:#6B5BB5; --storno-soft:#EEEBF8;
+    --db:#5B6672; --db-soft:#EEF1F5;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:21px;font-weight:650;letter-spacing:-.01em;margin:0}
+  h2{font-size:14px;font-weight:650;margin:0;letter-spacing:.02em}
+  .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px}
+  header.top .bmc{margin-left:auto;background:#FFDD00;color:#1B2430;text-decoration:none;
+    font-weight:600;font-size:12.5px;padding:7px 13px;border-radius:8px;white-space:nowrap;
+    transition:filter .15s}
+  header.top .bmc:hover{filter:brightness(.94)}
+
+  /* Anleitung */
+  details.guide{background:var(--surface);border:1px solid var(--line);
+    border-radius:10px;margin-bottom:20px;overflow:hidden}
+  details.guide>summary{cursor:pointer;list-style:none;padding:13px 16px;
+    font-weight:600;font-size:13px;display:flex;align-items:center;gap:9px}
+  details.guide>summary::-webkit-details-marker{display:none}
+  details.guide>summary .chev{transition:transform .18s;color:var(--muted)}
+  details.guide[open]>summary .chev{transform:rotate(90deg)}
+  .guide-body{padding:2px 16px 16px;border-top:1px solid var(--line)}
+  .guide-col{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px}
+  @media(max-width:720px){.guide-col{grid-template-columns:1fr}}
+  .guide-col h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--accent);margin:0 0 8px}
+  .guide-col ol{margin:0;padding-left:18px}
+  .guide-col li{margin-bottom:5px;font-size:13px}
+  .guide-col a{color:var(--accent);text-decoration:none;font-weight:600}
+  .guide-col a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:12px;background:var(--db-soft);
+    padding:1px 5px;border-radius:4px}
+
+  /* Upload */
+  .slots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+  @media(max-width:820px){.slots{grid-template-columns:1fr}}
+  .slot{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:14px;display:flex;flex-direction:column;min-height:150px}
+  .slot .tag{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);font-weight:600}
+  .slot .tag.optional::after{content:" · optional";color:var(--line-strong)}
+  .tag .hi{text-transform:none;letter-spacing:0;color:var(--accent);font-weight:700;font-size:12px;margin-left:3px}
+  .hint-strong{margin-top:6px;font-size:12px;font-weight:700;color:var(--accent);line-height:1.4}
+  .dropzone{position:relative;flex:1;margin-top:8px;border:1.5px dashed var(--line-strong);
+    border-radius:8px;padding:14px;display:flex;flex-direction:column;justify-content:center;
+    cursor:pointer;transition:border-color .15s,background .15s}
+  .dropzone:hover{border-color:var(--accent)}
+  .slot.drag .dropzone{border-color:var(--accent);background:var(--accent-soft)}
+  .slot.ok .dropzone{border-style:solid;border-color:var(--ok)}
+  .slot.err .dropzone{border-style:solid;border-color:var(--open)}
+  .dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .slot .name{font-weight:600;font-size:13px}
+  .slot .hint{color:var(--muted);font-size:12px;margin-top:5px}
+  .slot .stat{margin-top:8px;font-family:var(--mono);font-size:12px}
+  .slot .stat.ok{color:var(--ok)} .slot .stat.err{color:var(--open)}
+  .slot-actions{display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap}
+  .report-link{color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px;white-space:nowrap}
+  .report-link:hover{text-decoration:underline}
+  details.mini{font-size:12.5px}
+  details.mini>summary{cursor:pointer;list-style:none;color:var(--muted);font-weight:600}
+  details.mini>summary::-webkit-details-marker{display:none}
+  details.mini>summary::before{content:"▸ ";color:var(--line-strong)}
+  details.mini[open]>summary::before{content:"▾ "}
+  details.mini ol{margin:8px 0 2px;padding-left:18px}
+  details.mini li{margin-bottom:4px}
+  details.mini p{margin:8px 0 2px;color:var(--muted);line-height:1.45}
+
+  /* Controls */
+  .controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+  .tol{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+  .tol input{width:52px;padding:5px 7px;border:1px solid var(--line-strong);
+    border-radius:6px;font-family:var(--mono);text-align:center;font-size:13px}
+  button.primary{background:var(--accent);color:#fff;border:0;padding:9px 18px;
+    border-radius:7px;font-weight:600;font-size:13px;cursor:pointer;font-family:var(--sans)}
+  button.primary:disabled{background:var(--line-strong);cursor:not-allowed}
+  button.primary:not(:disabled):hover{background:#2f4baa}
+
+  /* Summary rail */
+  .rail{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:6px}
+  @media(max-width:820px){.rail{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:480px){.rail{grid-template-columns:repeat(2,1fr)}}
+  .cell{background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    padding:12px 13px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+  .cell:hover{border-color:var(--line-strong)}
+  .cell.active{box-shadow:inset 0 0 0 2px var(--accent);border-color:transparent}
+  .cell .n{font-family:var(--mono);font-size:22px;font-weight:600;line-height:1}
+  .cell .l{font-size:11.5px;color:var(--muted);margin-top:5px;font-weight:600}
+  .cell .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:1px}
+  .d-ok{background:var(--ok)} .d-warn{background:var(--warn)}
+  .d-open{background:var(--open)} .d-storno{background:var(--storno)} .d-db{background:var(--db)}
+
+  /* Suchzeile */
+  .searchbar{display:flex;align-items:center;gap:10px;margin-top:16px}
+  .searchbar input{flex:1;max-width:440px;padding:8px 12px;border:1px solid var(--line-strong);
+    border-radius:8px;font-size:13px;font-family:var(--sans);background:var(--surface)}
+  .searchbar input:focus{outline:none;border-color:var(--accent)}
+  .searchcount{font-size:12px;color:var(--muted);font-family:var(--mono);white-space:nowrap}
+
+  /* Table */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:11px;
+    margin-top:16px;overflow:hidden}
+  .panel-head{padding:13px 16px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .panel-head .desc{color:var(--muted);font-size:12.5px;font-weight:400;margin-top:2px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--muted);font-weight:600;padding:9px 14px;background:#FAFBFC;
+    border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  tr:hover td{background:#FAFBFC}
+  .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .mono{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .ordno{font-family:var(--mono);font-size:12px}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .p-ok{background:var(--ok-soft);color:var(--ok)}
+  .p-warn{background:var(--warn-soft);color:var(--warn)}
+  .p-open{background:var(--open-soft);color:var(--open)}
+  .p-storno{background:var(--storno-soft);color:var(--storno)}
+  .p-db{background:var(--db-soft);color:var(--db)}
+  .off{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;
+    background:var(--warn-soft);color:var(--warn);font-weight:600}
+  .off.zero{background:var(--ok-soft);color:var(--ok)}
+  .credit{color:var(--storno)}
+  .empty{padding:40px 16px;text-align:center;color:var(--muted)}
+  .empty b{color:var(--ink);display:block;margin-bottom:4px;font-weight:600}
+
+  /* Footer actions */
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px;
+    padding-top:18px;border-top:1px solid var(--line);align-items:flex-start}
+  .actbtn{position:relative}
+  button.ghost{background:var(--surface);border:1px solid var(--line-strong);
+    color:var(--ink);padding:9px 16px;border-radius:7px;font-weight:600;font-size:13px;
+    cursor:pointer;font-family:var(--sans)}
+  button.ghost:not(:disabled):hover{border-color:var(--accent);color:var(--accent)}
+  button.ghost:disabled{color:var(--muted);cursor:not-allowed;opacity:.7}
+  .soon{position:absolute;top:-8px;right:-6px;font-size:9px;font-weight:700;
+    background:var(--warn);color:#fff;padding:1px 5px;border-radius:5px;letter-spacing:.03em}
+  .note{font-size:12px;color:var(--muted);flex-basis:100%;margin-top:2px}
+  .hidden{display:none!important}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Amex ↔ Amazon Abgleich</h1>
+    <a class="bmc" href="https://www.buymeacoffee.com/goetzpil" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    <div class="sub" style="flex-basis:100%">
+      Ordnet Amazon-Business-Bestellungen den American-Express-Belastungen zu — über Betrag + Datum, mit Toleranz. Alles läuft lokal im Browser.
+    </div>
+  </header>
+
+  <div class="slots">
+    <div class="slot" id="slot-db">
+      <div class="tag optional">1 · Datenbank</div>
+      <div class="slot-actions">
+        <details class="mini"><summary>Was ist das?</summary>
+          <p>Die per „Datenbank speichern" erzeugte CSV vom letzten Mal. Zuerst laden → das Tool überspringt bereits zugeordnete Posten und zeigt nur Neues.</p>
+        </details>
+      </div>
+      <label class="dropzone">
+        <input type="file" accept=".csv,text/csv" data-role="db">
+        <div class="name">Zuletzt gespeicherte CSV</div>
+        <div class="hint">zuerst laden — Bekanntes wird übersprungen</div>
+        <div class="stat"></div>
+      </label>
+    </div>
+
+    <div class="slot" id="slot-az">
+      <div class="tag">2 · Amazon · Bestell-Abgleich <b class="hi">letzte 12 Wochen</b></div>
+      <div class="slot-actions">
+        <a class="report-link" href="https://www.amazon.de/b2b/aba/reports?reportType=transactions_report" target="_blank" rel="noopener">↗ Bericht öffnen</a>
+        <details class="mini"><summary>Anleitung</summary>
+          <ol>
+            <li>In Amazon Business anmelden (Rolle Administrator oder Buchhaltung/Finanzen).</li>
+            <li>Falls nicht schon aktiv: Bericht <b>Bestell-Abgleich</b> wählen.</li>
+            <li>Zeitraum im UI einstellen (z. B. 12 Wochen / eigener Bereich) — die URL merkt sich das nicht.</li>
+            <li><b>Bericht erstellen</b> → CSV lädt.</li>
+          </ol>
+        </details>
+      </div>
+      <label class="dropzone">
+        <input type="file" accept=".csv,text/csv" data-role="az">
+        <div class="name">CSV hierher ziehen</div>
+        <div class="hint">oder klicken zum Auswählen</div>
+        <div class="stat"></div>
+      </label>
+    </div>
+
+    <div class="slot" id="slot-ax">
+      <div class="tag">3 · American Express · activity.csv</div>
+      <div class="hint-strong">Herunterladen → CSV → Häkchen „Alle weiteren Transaktionsdetails einschließen"</div>
+      <div class="slot-actions">
+        <a class="report-link" href="https://global.americanexpress.com/activity/search" target="_blank" rel="noopener">↗ Umsätze öffnen</a>
+        <details class="mini"><summary>Anleitung</summary>
+          <ol>
+            <li>Bei American Express anmelden.</li>
+            <li><b>Kontobewegungen &amp; Abrechnungen</b> → links <b>Zeitraum personalisieren</b>.</li>
+            <li><b>Herunterladen → CSV</b>, Häkchen bei <b>„Alle weiteren Transaktionsdetails einschließen"</b>.</li>
+            <li>Datei heißt meist <code>activity.csv</code>.</li>
+          </ol>
+        </details>
+      </div>
+      <label class="dropzone">
+        <input type="file" accept=".csv,text/csv" data-role="ax">
+        <div class="name">CSV hierher ziehen</div>
+        <div class="hint">mit erweiterten Details</div>
+        <div class="stat"></div>
+      </label>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="tol">Datums­toleranz <input type="number" id="tol" value="2" min="0" max="10"> Tage</div>
+    <button class="primary" id="run" disabled>Abgleichen</button>
+    <span class="sub" id="runhint">Amazon- und Amex-CSV laden, um zu starten.</span>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="rail" id="rail"></div>
+    <div class="searchbar">
+      <input type="search" id="tblSearch" placeholder="Tabelle durchsuchen … (Betrag, Bestellnummer, Referenz, Datum)">
+      <span class="searchcount" id="searchCount"></span>
+    </div>
+    <div id="panels"></div>
+
+    <div class="actions">
+      <div class="actbtn">
+        <button class="ghost" id="saveDb">💾 Zuordnung speichern (CSV)</button>
+      </div>
+      <div class="actbtn">
+        <button class="ghost" id="expDatev" disabled>📊 DATEV-Export<span class="soon">folgt</span></button>
+      </div>
+      <div class="note">
+        „Zuordnung speichern" ist zugleich <b>Datenbank</b> und <b>Buchhaltungs-Export</b>: eine CSV mit allen zugeordneten Posten, den Dedup-Schlüsseln und einer leeren Spalte <b>Buchungskonto</b>. Beim nächsten Mal oben unter <b>Datenbank</b> zuerst wieder laden — Bekanntes wird übersprungen. DATEV bauen wir (falls überhaupt) später aus genau dieser Datei.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- CSV-Parser (Anführungszeichen, eingebettete Zeilenumbrüche, Delimiter-Erkennung) ---------- */
+function detectDelim(text){
+  const line=text.replace(/^\uFEFF/,'').split(/\r?\n/)[0]||'';
+  let c=0,s=0,q=false;
+  for(const ch of line){ if(ch==='"')q=!q; else if(!q){ if(ch===',')c++; else if(ch===';')s++; } }
+  return s>c?';':',';
+}
+function parseCSV(text){
+  text=text.replace(/^\uFEFF/,'');
+  const delim=detectDelim(text);
+  const rows=[]; let field='',row=[],inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inQ=false; }
+      else field+=c;
+    } else {
+      if(c==='"') inQ=true;
+      else if(c===delim){ row.push(field);field=''; }
+      else if(c==='\n'){ row.push(field);rows.push(row);row=[];field=''; }
+      else if(c==='\r'){}
+      else field+=c;
+    }
+  }
+  if(field!==''||row.length){ row.push(field);rows.push(row); }
+  if(!rows.length) return [];
+  const head=rows[0].map(h=>h.trim());
+  return rows.slice(1)
+    .filter(r=>r.length>1 && r.some(v=>v.trim()!==''))
+    .map(r=>{const o={};head.forEach((h,i)=>o[h]=(r[i]??'').trim());return o;});
+}
+
+/* ---------- Helfer ---------- */
+function parseAmount(s){
+  if(s==null) return NaN;
+  s=String(s).trim().replace(/\s/g,'');
+  if(!s) return NaN;
+  let neg=false;
+  if(s[0]==='-'){neg=true;s=s.slice(1);}
+  if(s[0]==='+'){s=s.slice(1);}
+  s=s.replace(/\./g,'').replace(',','.');
+  const v=parseFloat(s);
+  if(isNaN(v)) return NaN;
+  return neg?-v:v;
+}
+function parseDate(s){
+  const m=String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m) return null;
+  return new Date(+m[3],+m[2]-1,+m[1]);
+}
+function fmtDate(d){ if(!d)return'—';
+  const p=n=>String(n).padStart(2,'0');
+  return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear();
+}
+function dayDiff(a,b){ return Math.round((a-b)/86400000); }
+function eur(v){ return (v<0?'−':'')+Math.abs(v).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+function clean(s){ return String(s==null?'':s).replace(/^[='"\s]+/,'').replace(/['"\s]+$/,''); }
+
+/* ---------- Zustand ---------- */
+const state={ az:null, ax:null, db:null, result:null };
+
+/* ---------- Datei laden + klassifizieren ---------- */
+function classify(rows){
+  if(!rows.length) return 'leer';
+  const k=Object.keys(rows[0]);
+  if(k.includes('Zahlungsreferenz-ID') && k.includes('Art des Zahlungsmittels')) return 'az';
+  if(k.includes('Betreff') && k.includes('Beschreibung') && k.includes('Betrag')) return 'ax';
+  if(k.includes('Zahlungsreferenz-ID') && k.includes('Amex-Betreff')) return 'db';
+  return 'unbekannt';
+}
+function readFile(file, expected){
+  const r=new FileReader();
+  r.onload=()=>{
+    let rows;
+    try{ rows=parseCSV(r.result); }
+    catch(e){ setSlot(expected,'err','Datei konnte nicht gelesen werden.'); return; }
+    const kind=classify(rows);
+    const names={az:'Amazon-Bestell-Abgleich',ax:'Amex activity.csv',db:'Datenbank'};
+    if(kind==='unbekannt'||kind==='leer'){
+      setSlot(expected,'err','Format nicht erkannt – erwartet: '+names[expected]);
+      return;
+    }
+    if(kind!==expected){
+      setSlot(expected,'err','Das sieht nach „'+names[kind]+'" aus, nicht nach „'+names[expected]+'".');
+      return;
+    }
+    state[expected]={file:file.name, rows};
+    setSlot(expected,'ok',file.name+' · '+rows.length+' Zeilen');
+    refreshRun();
+  };
+  r.readAsText(file,'utf-8');
+}
+function setSlot(role,cls,msg){
+  const slot=document.getElementById('slot-'+role);
+  const stat=slot.querySelector('.stat');
+  slot.classList.remove('ok','err');
+  stat.classList.remove('ok','err');
+  if(cls){ slot.classList.add(cls); stat.classList.add(cls); }
+  stat.textContent=msg||'';
+}
+document.querySelectorAll('input[type=file]').forEach(inp=>{
+  const role=inp.dataset.role;
+  inp.addEventListener('change',e=>{ if(e.target.files[0]) readFile(e.target.files[0],role); });
+  const slot=document.getElementById('slot-'+role);
+  ['dragover','dragenter'].forEach(ev=>slot.addEventListener(ev,e=>{e.preventDefault();slot.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>slot.addEventListener(ev,e=>{e.preventDefault();slot.classList.remove('drag');}));
+  slot.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) readFile(f,role); });
+});
+function refreshRun(){
+  const ready=state.az&&state.ax;
+  document.getElementById('run').disabled=!ready;
+  document.getElementById('runhint').textContent=ready
+    ? (state.db?'Datenbank geladen – Bekanntes wird übersprungen.':'Bereit.')
+    : 'Amazon- und Amex-CSV laden, um zu starten.';
+}
+
+/* ---------- Normalisierung der Quellzeilen ---------- */
+function normAmazon(rows){
+  return rows
+    .filter(r=>r['Art des Zahlungsmittels']==='American Express')
+    .map(r=>{
+      const mag=Math.abs(parseAmount(r['Zahlungsbetrag']));
+      const isRefund=(r['Transaktionstyp']||'').toLowerCase().startsWith('erstatt');
+      return {
+        datum:parseDate(r['Transaktionsdatum']), datumStr:r['Transaktionsdatum'],
+        mag, signed:isRefund?-mag:mag, richtung:isRefund?'Gutschrift':'Belastung',
+        bestellnummer:r['Bestellnummer']||'', bestelldatum:r['Bestelldatum']||'',
+        zref:clean(r['Zahlungsreferenz-ID']), used:false
+      };
+    })
+    .filter(r=>r.datum && !isNaN(r.mag));
+}
+function normAmex(rows){
+  return rows
+    .filter(r=>(r['Beschreibung']||'').toUpperCase().includes('AMAZON'))
+    .map(r=>{
+      const signed=parseAmount(r['Betrag']); const mag=Math.abs(signed);
+      return {
+        datum:parseDate(r['Datum']), datumStr:r['Datum'],
+        signed, mag, richtung:signed<0?'Gutschrift':'Belastung',
+        betreff:clean(r['Betreff']), beschr:r['Beschreibung']||'', used:false
+      };
+    })
+    .filter(r=>r.datum && !isNaN(r.mag));
+}
+
+/* ---------- DB-Import: bekannte Schlüssel ---------- */
+function dbKeys(rows){
+  const zref=new Set(), betreff=new Set(), entries=[];
+  (rows||[]).forEach(r=>{
+    const z=clean(r['Zahlungsreferenz-ID']), b=clean(r['Amex-Betreff']);
+    if(z) zref.add(z); if(b) betreff.add(b);
+    entries.push(r);
+  });
+  return {zref,betreff,entries};
+}
+
+/* ---------- Kern-Matching ---------- */
+function reconcile(){
+  const tol=Math.max(0,parseInt(document.getElementById('tol').value||'2',10));
+  const db=state.db?dbKeys(state.db.rows):{zref:new Set(),betreff:new Set(),entries:[]};
+
+  let az=normAmazon(state.az.rows);
+  let ax=normAmex(state.ax.rows);
+
+  // Bereits in Datenbank -> überspringen
+  const azSkipped=az.filter(r=>db.zref.has(r.zref));
+  const axSkipped=ax.filter(r=>db.betreff.has(r.betreff));
+  az=az.filter(r=>!db.zref.has(r.zref));
+  ax=ax.filter(r=>!db.betreff.has(r.betreff));
+
+  const matched=[]; // {status, az, ax, offset}
+  const inTol=(p,q)=>p.richtung===q.richtung && Math.abs(p.mag-q.mag)<0.005 && Math.abs(dayDiff(p.datum,q.datum))<=tol;
+  // Amazon (nach Datum) gegen Amex matchen: gleiche Richtung, Betrag exakt, Datum in Toleranz
+  az.sort((a,b)=>a.datum-b.datum);
+  for(const a of az){
+    const cands=ax.filter(x=>!x.used && inTol(x,a));
+    if(!cands.length){ continue; }
+    cands.sort((p,q)=>Math.abs(dayDiff(p.datum,a.datum))-Math.abs(dayDiff(q.datum,a.datum)));
+    const pick=cands[0]; pick.used=true; a.used=true;
+    // Mehrdeutig, wenn – unabhängig von der Reihenfolge – auf einer Seite mehr
+    // als ein möglicher Partner im Zeitfenster liegt (z. B. 2× gleicher Betrag am selben Tag).
+    const azSide=ax.filter(x=>inTol(x,a)).length;   // wie viele Amex-Partner kämen für a infrage
+    const axSide=az.filter(y=>inTol(y,pick)).length; // wie viele Amazon-Partner kämen für pick infrage
+    const ambiguous=(azSide>1 || axSide>1);
+    matched.push({ status: ambiguous?'ambig':'ok', az:a, ax:pick, offset:dayDiff(pick.datum,a.datum) });
+  }
+
+  // Reste
+  const azOpen=az.filter(r=>!r.used);
+  let axRest=ax.filter(r=>!r.used);
+
+  // Netto-Null-Paare in den Amex-Resten (+X / -X, nahe beieinander)
+  const storno=[];
+  const REV_TOL=Math.max(tol,5);
+  const charges=axRest.filter(r=>r.signed>0), credits=axRest.filter(r=>r.signed<0);
+  for(const cr of credits){
+    if(cr.used) continue;
+    const p=charges.find(ch=>!ch.used && Math.abs(ch.mag-cr.mag)<0.005
+      && Math.abs(dayDiff(ch.datum,cr.datum))<=REV_TOL);
+    if(p){ p.used=true; cr.used=true; storno.push({charge:p,credit:cr}); }
+  }
+  const axOpen=axRest.filter(r=>!r.used);
+
+  state.result={ tol, matched, azOpen, axOpen, storno, azSkipped, axSkipped, db };
+  render();
+}
+
+/* ---------- Rendering ---------- */
+const BUCKETS=[
+  {id:'ok',   label:'Zugeordnet',  dot:'d-ok'},
+  {id:'ambig',label:'Mehrdeutig',  dot:'d-warn'},
+  {id:'axOpen',label:'Nur Amex',   dot:'d-open'},
+  {id:'azOpen',label:'Nur Amazon', dot:'d-open'},
+  {id:'storno',label:'Storno',     dot:'d-storno'},
+  {id:'db',    label:'Aus DB',     dot:'d-db'},
+];
+let active='ok';
+let query='';
+
+function applyFilter(){
+  const q=query.trim().toLowerCase();
+  const rows=document.querySelectorAll('#panels tbody tr');
+  const cnt=document.getElementById('searchCount');
+  if(!rows.length){ if(cnt) cnt.textContent=''; return; }
+  let shown=0;
+  rows.forEach(tr=>{
+    const match=!q || tr.textContent.toLowerCase().includes(q);
+    tr.style.display=match?'':'none';
+    if(match) shown++;
+  });
+  if(cnt) cnt.textContent = q ? (shown+' / '+rows.length+' Treffer') : (rows.length+' Zeilen');
+}
+
+function counts(r){
+  return {
+    ok:r.matched.filter(m=>m.status==='ok').length,
+    ambig:r.matched.filter(m=>m.status==='ambig').length,
+    axOpen:r.axOpen.length, azOpen:r.azOpen.length,
+    storno:r.storno.length,
+    db:(r.azSkipped.length + r.db.entries.length)
+  };
+}
+function render(){
+  const r=state.result; if(!r) return;
+  document.getElementById('results').classList.remove('hidden');
+  const c=counts(r);
+  document.getElementById('rail').innerHTML=BUCKETS.map(b=>`
+    <div class="cell ${b.id===active?'active':''}" data-b="${b.id}">
+      <div class="n"><span class="dot ${b.dot}"></span>${c[b.id]}</div>
+      <div class="l">${b.label}</div>
+    </div>`).join('');
+  document.querySelectorAll('.cell').forEach(el=>el.onclick=()=>{active=el.dataset.b;render();});
+  document.getElementById('panels').innerHTML=panelFor(active,r);
+  applyFilter();
+}
+
+function pill(cls,txt){ return `<span class="pill ${cls}">${txt}</span>`; }
+function offBadge(o){ return o===0?`<span class="off zero">±0</span>`:`<span class="off">${o>0?'+':''}${o} d</span>`; }
+
+function rowMatched(m){
+  const a=m.az,x=m.ax, cr=a.richtung==='Gutschrift';
+  return `<tr>
+    <td>${m.status==='ok'?pill('p-ok','zugeordnet'):pill('p-warn','prüfen')}</td>
+    <td class="num ${cr?'credit':''}">${eur(a.signed)}</td>
+    <td class="mono">${fmtDate(a.datum)}</td>
+    <td class="mono">${fmtDate(x.datum)}</td>
+    <td>${offBadge(m.offset)}</td>
+    <td class="ordno">${a.bestellnummer||'—'}</td>
+    <td class="mono">${a.zref||'—'}</td>
+    <td class="mono">${x.betreff||'—'}</td>
+  </tr>`;
+}
+function tableMatched(list,desc){
+  if(!list.length) return emptyPanel(desc);
+  return `<div class="panel"><div class="panel-head"><div><h2>${active==='ok'?'Zugeordnet':'Mehrdeutig'}</h2>
+      <div class="desc">${desc}</div></div></div>
+    <div style="overflow-x:auto"><table><thead><tr>
+      <th>Status</th><th style="text-align:right">Betrag</th><th>Amazon</th><th>Amex</th><th>Versatz</th>
+      <th>Bestellnummer</th><th>Zahlungsref.-ID</th><th>Amex-Betreff</th>
+    </tr></thead><tbody>${list.map(rowMatched).join('')}</tbody></table></div></div>`;
+}
+function panelFor(id,r){
+  if(id==='ok')   return tableMatched(r.matched.filter(m=>m.status==='ok'),
+    'Eindeutig über Betrag + Datum zugeordnet. „Versatz" = Tage zwischen Amazon- und Amex-Datum.');
+  if(id==='ambig')return tableMatched(r.matched.filter(m=>m.status==='ambig'),
+    'Mehrere Amex-Buchungen mit gleichem Betrag im Zeitfenster – bitte manuell bestätigen.');
+  if(id==='axOpen'){
+    if(!r.axOpen.length) return emptyPanel('Keine offenen Amex-Buchungen. Alles zugeordnet.');
+    return `<div class="panel"><div class="panel-head"><div><h2>Nur auf Amex</h2>
+      <div class="desc">Amex-Belastung ohne Amazon-Gegenstück im Bericht. Ggf. anderer Zeitraum oder fehlende Bestellung.</div></div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Status</th><th style="text-align:right">Betrag</th><th>Amex-Datum</th><th>Beschreibung</th><th>Amex-Betreff</th></tr></thead>
+      <tbody>${r.axOpen.map(x=>`<tr><td>${pill('p-open','offen')}</td>
+        <td class="num ${x.signed<0?'credit':''}">${eur(x.signed)}</td>
+        <td class="mono">${fmtDate(x.datum)}</td><td class="mono">${x.beschr}</td><td class="mono">${x.betreff||'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  if(id==='azOpen'){
+    if(!r.azOpen.length) return emptyPanel('Keine offenen Amazon-Posten. Alles zugeordnet.');
+    return `<div class="panel"><div class="panel-head"><div><h2>Nur bei Amazon</h2>
+      <div class="desc">Amazon-Amex-Posten ohne Amex-Gegenstück. Prüfen, ob die Belastung im Amex-Zeitraum liegt.</div></div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Status</th><th style="text-align:right">Betrag</th><th>Amazon-Datum</th><th>Bestellnummer</th><th>Zahlungsref.-ID</th></tr></thead>
+      <tbody>${r.azOpen.map(a=>`<tr><td>${pill('p-open','offen')}</td>
+        <td class="num ${a.signed<0?'credit':''}">${eur(a.signed)}</td>
+        <td class="mono">${fmtDate(a.datum)}</td><td class="ordno">${a.bestellnummer||'—'}</td><td class="mono">${a.zref||'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  if(id==='storno'){
+    if(!r.storno.length) return emptyPanel('Keine Storno-/Netto-Null-Paare gefunden.');
+    return `<div class="panel"><div class="panel-head"><div><h2>Storno · Netto-Null</h2>
+      <div class="desc">Belastung + Gutschrift auf der Karte, die sich aufheben (Amazon hat oft übers Prämienkonto abgerechnet). Buchhalterisch neutral.</div></div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Status</th><th style="text-align:right">Betrag</th><th>Belastung</th><th>Gutschrift</th><th>Amex-Betreff</th></tr></thead>
+      <tbody>${r.storno.map(s=>`<tr><td>${pill('p-storno','netto 0')}</td>
+        <td class="num">${eur(s.charge.mag)}</td>
+        <td class="mono">${fmtDate(s.charge.datum)}</td><td class="mono">${fmtDate(s.credit.datum)}</td>
+        <td class="mono">${s.charge.betreff||'—'} / ${s.credit.betreff||'—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  if(id==='db'){
+    const prev=r.db.entries, sk=r.azSkipped;
+    if(!prev.length && !sk.length) return emptyPanel('Keine Datenbank geladen. Speichere den Abgleich unten, um beim nächsten Mal Bekanntes zu überspringen.');
+    const prevRows=prev.map(e=>`<tr><td>${pill('p-db','Datenbank')}</td>
+      <td class="num">${e['Betrag']||''}</td><td class="mono">${e['Amazon-Datum']||'—'}</td>
+      <td class="ordno">${e['Bestellnummer']||'—'}</td><td class="mono">${clean(e['Zahlungsreferenz-ID'])||'—'}</td></tr>`).join('');
+    const skRows=sk.map(a=>`<tr><td>${pill('p-db','übersprungen')}</td>
+      <td class="num">${eur(a.signed)}</td><td class="mono">${fmtDate(a.datum)}</td>
+      <td class="ordno">${a.bestellnummer||'—'}</td><td class="mono">${a.zref||'—'}</td></tr>`).join('');
+    return `<div class="panel"><div class="panel-head"><div><h2>Aus der Datenbank</h2>
+      <div class="desc">${prev.length} bereits erfasst · ${sk.length} in den neuen Berichten übersprungen (schon bekannt).</div></div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Status</th><th style="text-align:right">Betrag</th><th>Amazon-Datum</th><th>Bestellnummer</th><th>Zahlungsref.-ID</th></tr></thead>
+      <tbody>${prevRows}${skRows}</tbody></table></div></div>`;
+  }
+  return '';
+}
+function emptyPanel(msg){
+  return `<div class="panel"><div class="empty"><b>Nichts hier.</b>${msg}</div></div>`;
+}
+
+/* ---------- Datenbank speichern (funktioniert) ---------- */
+function saveDb(){
+  const r=state.result; if(!r) return;
+  const head=['Status','Betrag','Richtung','Amazon-Datum','Amex-Datum','Tag-Versatz',
+    'Bestellnummer','Bestelldatum','Zahlungsreferenz-ID','Amex-Betreff','Amex-Beschreibung','Buchungskonto','Erfasst-am'];
+  const today=fmtDate(new Date());
+  const rows=[];
+  // Bestehende DB-Einträge übernehmen (inkl. selbst befülltem Buchungskonto)
+  (r.db.entries||[]).forEach(e=>rows.push(head.map(h=>e[h]!==undefined?e[h]:'')));
+  // Neu zugeordnete ergänzen
+  r.matched.forEach(m=>{
+    const a=m.az,x=m.ax;
+    rows.push([ m.status==='ok'?'zugeordnet':'zugeordnet (geprüft?)',
+      a.signed.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}),
+      a.richtung, fmtDate(a.datum), fmtDate(x.datum), (m.offset>0?'+':'')+m.offset,
+      a.bestellnummer, a.bestelldatum, a.zref, x.betreff, x.beschr, '', today ]);
+  });
+  const esc=v=>{ v=String(v??''); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(',')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='amex-amazon-zuordnung_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+document.getElementById('run').addEventListener('click',reconcile);
+document.getElementById('tol').addEventListener('change',()=>{ if(state.result) reconcile(); });
+document.getElementById('saveDb').addEventListener('click',saveDb);
+document.getElementById('tblSearch').addEventListener('input',e=>{ query=e.target.value; applyFilter(); });
+
+/* ---------- PWA: Service Worker (nur auf https/echtem Host aktiv) ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{/* in Vorschau/lokal ohne Server ignorierbar */});
+  });
+}
+</script>
